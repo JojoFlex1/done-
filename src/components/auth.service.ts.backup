@@ -1,0 +1,214 @@
+import { Injectable, BadRequestException, UnauthorizedException, ConflictException, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import { SupabaseService } from '../supabase/supabase.service';
+import { WalletService } from './wallet/wallet.service';
+import { EmailService } from './email.service';
+import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
+
+@Injectable()
+export class AuthService {
+  private otpStore = new Map<string, { otp: string; expires: Date; userData?: any }>();
+  private readonly logger = new Logger(AuthService.name);
+
+  constructor(
+    private supabaseService: SupabaseService,
+    private walletService: WalletService,
+    private emailService: EmailService,
+    private jwtService: JwtService,
+  ) {}
+
+  /**
+   * User signup with wallet creation
+   */
+  async signup(signupDto: SignupDto) {
+    const { email, username, password, firstName, lastName } = signupDto;
+
+    try {
+      // Check if user exists
+      const existingUser = await this.supabaseService.getUserByEmail(email);
+      if (existingUser) {
+        throw new ConflictException('User already exists');
+      }
+
+      // Generate Cardano wallet
+      const walletData = this.walletService.generateWallet();
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 12);
+      
+      // Generate OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      
+      // Store user data temporarily
+      this.otpStore.set(email, { 
+        otp, 
+        expires: otpExpires, 
+        userData: {
+          email,
+          username,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          walletAddress: walletData.address,
+          encryptedMnemonic: walletData.encryptedMnemonic,
+        }
+      });
+      
+      // Send OTP
+      await this.emailService.sendOTP(email, otp, firstName);
+      
+      return {
+        success: true,
+        message: 'Signup initiated. Check your email for verification code.',
+        email,
+        walletAddress: walletData.address,
+      };
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      throw new BadRequestException('Signup failed');
+    }
+  }
+
+  /**
+   * Verify OTP and create user
+   */
+  async verifyOTP(email: string, otp: string) {
+    const storedData = this.otpStore.get(email);
+    
+    if (!storedData) {
+      throw new BadRequestException('No verification code found');
+    }
+    
+    if (storedData.expires < new Date()) {
+      this.otpStore.delete(email);
+      throw new BadRequestException('Verification code expired');
+    }
+    
+    if (storedData.otp !== otp) {
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    try {
+      // Create user in database
+      const result = await this.supabaseService.createUser(storedData.userData);
+      this.otpStore.delete(email);
+      
+      return {
+        success: true,
+        message: 'Account created successfully. You can now login.',
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          username: storedData.userData.username,
+          walletAddress: storedData.userData.walletAddress,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException('Account creation failed');
+    }
+  }
+
+  /**
+   * User login
+   */
+  async login(loginDto: LoginDto) {
+    const { email, password } = loginDto;
+    
+    try {
+      // Get user
+      const user = await this.supabaseService.getUserByEmail(email);
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Get profile
+      const profile = await this.supabaseService.getUserProfile(user.id);
+      if (!profile) {
+        throw new UnauthorizedException('User profile not found');
+      }
+
+      // Verify password with Supabase auth
+      const { data, error } = await this.supabaseService.getClient().auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Generate JWT
+      const payload = {
+        sub: user.id,
+        email: user.email,
+        username: profile.username,
+        walletAddress: profile.wallet_address,
+      };
+
+      return {
+        success: true,
+        access_token: this.jwtService.sign(payload),
+        user: {
+          id: user.id,
+          email: user.email,
+          username: profile.username,
+          firstName: profile.first_name,
+          lastName: profile.last_name,
+          walletAddress: profile.wallet_address,
+          totalPoints: profile.total_points || 0,
+        },
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException('Login failed');
+    }
+  }
+
+  /**
+   * Resend OTP
+   */
+  async resendOTP(email: string) {
+    const storedData = this.otpStore.get(email);
+    if (!storedData) {
+      throw new BadRequestException('No signup process found');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    
+    storedData.otp = otp;
+    storedData.expires = otpExpires;
+    this.otpStore.set(email, storedData);
+    
+    await this.emailService.sendOTP(email, otp, storedData.userData.firstName);
+    
+    return { success: true, message: 'Verification code resent' };
+  }
+
+  /**
+   * Get user profile
+   */
+  async getProfile(userId: string) {
+    try {
+      const profile = await this.supabaseService.getUserProfile(userId);
+      if (!profile) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      return {
+        id: profile.id,
+        username: profile.username,
+        firstName: profile.first_name,
+        lastName: profile.last_name,
+        walletAddress: profile.wallet_address,
+        totalPoints: profile.total_points || 0,
+        createdAt: profile.created_at,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Failed to get profile');
+    }
+  }
+}

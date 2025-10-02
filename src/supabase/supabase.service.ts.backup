@@ -1,0 +1,159 @@
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { ConfigService } from '../config/config.service';
+
+@Injectable()
+export class SupabaseService implements OnModuleInit {
+  private supabase: SupabaseClient;
+  private readonly logger = new Logger(SupabaseService.name);
+
+  constructor(private configService: ConfigService) {}
+
+  onModuleInit() {
+    const config = this.configService.supabase;
+    this.supabase = createClient(config.url, config.serviceRoleKey);
+    this.logger.log('Supabase client initialized');
+  }
+
+  getClient() {
+    return this.supabase;
+  }
+
+  async createUser(userData: any) {
+    const { data: authUser, error: authError } = await this.supabase.auth.admin.createUser({
+      email: userData.email,
+      password: userData.password,
+      email_confirm: true,
+      user_metadata: {
+        username: userData.username,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+      },
+    });
+
+    if (authError) throw authError;
+
+    const { data: profile, error: profileError } = await this.supabase
+      .from('profiles')
+      .insert({
+        id: authUser.user.id,
+        username: userData.username,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        wallet_address: userData.walletAddress,
+        encrypted_mnemonic: userData.encryptedMnemonic,
+      })
+      .select()
+      .single();
+
+    if (profileError) throw profileError;
+
+    return { user: authUser.user, profile };
+  }
+
+  async getUserByEmail(email: string) {
+    const { data, error } = await this.supabase.auth.admin.listUsers();
+    if (error) throw error;
+    
+    const user = data.users.find((u: any) => u.email === email);
+    return user || null;
+  }
+
+  async getUserProfile(userId: string) {
+    const { data, error } = await this.supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async createWasteSubmission(data: any) {
+    const { data: submission, error } = await this.supabase
+      .from('waste_submissions')
+      .insert(data)
+      .select()
+      .single();
+    if (error) throw error;
+    return submission;
+  }
+
+  async getUserSubmissions(userId: string) {
+    const { data, error } = await this.supabase
+      .from('waste_submissions')
+      .select('*, bins (id, name, address, latitude, longitude)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getBinByQR(qrCode: string) {
+    const { data, error } = await this.supabase
+      .from('bins')
+      .select('*')
+      .eq('qr_code', qrCode)
+      .eq('status', 'active')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async getAllActiveBins() {
+    const { data, error } = await this.supabase
+      .from('bins')
+      .select('*')
+      .eq('status', 'active');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createPointTransaction(data: any) {
+    const { data: transaction, error } = await this.supabase
+      .from('point_transactions')
+      .insert(data)
+      .select()
+      .single();
+    if (error) throw error;
+    return transaction;
+  }
+
+  async getUserTransactions(userId: string) {
+    const { data, error } = await this.supabase
+      .from('point_transactions')
+      .select('*, waste_submissions (waste_type, bins (name))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getUserTotalPoints(userId: string) {
+    const { data, error } = await this.supabase
+      .from('profiles')
+      .select('total_points')
+      .eq('id', userId)
+      .single();
+    if (error) throw error;
+    return data?.total_points || 0;
+  }
+
+  async updateSubmissionWithBlockchainHash(submissionId: string, hash: string) {
+    const { data, error } = await this.supabase
+      .from('waste_submissions')
+      .update({ blockchain_hash: hash })
+      .eq('id', submissionId);
+    if (error) throw error;
+    return data;
+  }
+
+  async updateTransactionWithBlockchainHash(transactionId: string, hash: string) {
+    const { data, error } = await this.supabase
+      .from('point_transactions')
+      .update({ blockchain_hash: hash })
+      .eq('id', transactionId);
+    if (error) throw error;
+    return data;
+  }
+}
