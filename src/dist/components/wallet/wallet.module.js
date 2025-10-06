@@ -8,14 +8,17 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WalletModule = void 0;
 const common_1 = require("@nestjs/common");
+const wallet_controller_1 = require("./wallet.controller");
 const wallet_service_1 = require("./wallet.service");
-const config_service_1 = require("../../config/config.service");
+const supabase_module_1 = require("../../supabase/supabase.module");
 let WalletModule = class WalletModule {
 };
 exports.WalletModule = WalletModule;
 exports.WalletModule = WalletModule = __decorate([
     (0, common_1.Module)({
-        providers: [wallet_service_1.WalletService, config_service_1.ConfigService],
+        imports: [supabase_module_1.SupabaseModule],
+        controllers: [wallet_controller_1.WalletController],
+        providers: [wallet_service_1.WalletService],
         exports: [wallet_service_1.WalletService],
     })
 ], WalletModule);

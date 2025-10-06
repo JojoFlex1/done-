@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
+import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
-import { ConfigService } from '../../config/config.service';
+import { SupabaseModule } from '../../supabase/supabase.module';
 
 @Module({
-  providers: [WalletService, ConfigService],
+  imports: [SupabaseModule],
+  controllers: [WalletController], // THIS WAS MISSING!
+  providers: [WalletService],
   exports: [WalletService],
 })
 export class WalletModule {}
