@@ -46,12 +46,96 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WalletService = void 0;
 const common_1 = require("@nestjs/common");
 const config_service_1 = require("../../config/config.service");
+const supabase_service_1 = require("../../supabase/supabase.service");
 const crypto = __importStar(require("crypto"));
 const lucid_1 = require("@lucid-evolution/lucid");
 let WalletService = WalletService_1 = class WalletService {
-    constructor(configService) {
+    constructor(configService, supabaseService) {
         this.configService = configService;
+        this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(WalletService_1.name);
+    }
+    async generateAndSaveWallet(userId) {
+        try {
+            const supabase = this.supabaseService.getClient();
+            const { data: existingProfile } = await supabase
+                .from('profile')
+                .select('wallet_address')
+                .eq('id', userId)
+                .single();
+            if (existingProfile?.wallet_address) {
+                throw new common_1.BadRequestException('User already has a wallet');
+            }
+            const mnemonic = (0, lucid_1.generateSeedPhrase)();
+            const network = this.getCurrentNetwork();
+            this.logger.log(`🔑 Generating wallet for user ${userId}`);
+            this.logger.log(`📝 Mnemonic: ${mnemonic.substring(0, 50)}... (${mnemonic.split(' ').length} words)`);
+            const wallet = (0, lucid_1.walletFromSeed)(mnemonic, {
+                network: network === 'Mainnet' ? 'Mainnet' : network
+            });
+            this.logger.log(`📍 Address: ${wallet.address}`);
+            const encryptedMnemonic = this.encryptMnemonic(mnemonic, this.configService.encryption.key);
+            this.logger.log(`🔐 Encrypted mnemonic: ${encryptedMnemonic.substring(0, 50)}...`);
+            const { error } = await supabase
+                .from('profile')
+                .update({
+                wallet_address: wallet.address,
+                reward_address: wallet.rewardAddress,
+                encrypted_mnemonic: encryptedMnemonic,
+                updated_at: new Date().toISOString(),
+            })
+                .eq('id', userId);
+            if (error) {
+                this.logger.error('❌ Failed to save wallet:', error);
+                throw new common_1.BadRequestException('Failed to save wallet to profile');
+            }
+            this.logger.log(`✅ Wallet saved for user ${userId}`);
+            return {
+                address: wallet.address,
+                rewardAddress: wallet.rewardAddress,
+                mnemonic,
+            };
+        }
+        catch (error) {
+            this.logger.error('generateAndSaveWallet error:', error);
+            throw error;
+        }
+    }
+    async getUserWallet(userId) {
+        const supabase = this.supabaseService.getClient();
+        const { data, error } = await supabase
+            .from('profile')
+            .select('wallet_address, reward_address')
+            .eq('id', userId)
+            .single();
+        if (error || !data?.wallet_address) {
+            throw new common_1.BadRequestException('No wallet found for this user');
+        }
+        return {
+            address: data.wallet_address,
+            rewardAddress: data.reward_address,
+        };
+    }
+    async getWalletWithKeys(userId) {
+        const supabase = this.supabaseService.getClient();
+        const { data, error } = await supabase
+            .from('profile')
+            .select('encrypted_mnemonic')
+            .eq('id', userId)
+            .single();
+        if (error || !data?.encrypted_mnemonic) {
+            throw new common_1.BadRequestException('Wallet not found');
+        }
+        const mnemonic = this.decryptMnemonic(data.encrypted_mnemonic, this.configService.encryption.key);
+        return this.restoreWallet(mnemonic);
+    }
+    getTreasuryWallet() {
+        const treasuryMnemonic = this.configService.treasury.mnemonic;
+        if (!treasuryMnemonic) {
+            throw new Error('Treasury mnemonic not configured');
+        }
+        this.logger.log('Loading treasury wallet');
+        return this.restoreWallet(treasuryMnemonic);
     }
     generateWallet() {
         try {
@@ -61,7 +145,7 @@ let WalletService = WalletService_1 = class WalletService {
                 network: network === 'Mainnet' ? 'Mainnet' : network
             });
             const encryptedMnemonic = this.encryptMnemonic(mnemonic, this.configService.encryption.key);
-            this.logger.log(`Generated Cardano wallet: ${wallet.address.substring(0, 20)}...`);
+            this.logger.log(`Generated test wallet: ${wallet.address.substring(0, 30)}...`);
             return {
                 address: wallet.address,
                 rewardAddress: wallet.rewardAddress,
@@ -163,6 +247,7 @@ let WalletService = WalletService_1 = class WalletService {
 exports.WalletService = WalletService;
 exports.WalletService = WalletService = WalletService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_service_1.ConfigService])
+    __metadata("design:paramtypes", [config_service_1.ConfigService,
+        supabase_service_1.SupabaseService])
 ], WalletService);
 //# sourceMappingURL=wallet.service.js.map
