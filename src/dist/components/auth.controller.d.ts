@@ -20,6 +20,10 @@ export declare class AuthController {
             lastName: any;
             walletAddress: any;
         };
+        wallet: {
+            address: any;
+            mnemonic: string;
+        };
         token: string;
     }>;
     login(loginDto: LoginDto): Promise<{

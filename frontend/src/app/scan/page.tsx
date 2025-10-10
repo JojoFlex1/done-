@@ -1,269 +1,208 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ArrowLeft, QrCode, MapPin, Search, Camera } from "lucide-react"
-import { QRCodeScanner } from "@/components/qr/qr-code-scanner"
-import { BinFinder } from "@/components/qr/bin-finder"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { QrCode, MapPin, ArrowRight, Loader2, CheckCircle } from "lucide-react"
 
 interface Bin {
   id: string
-  location: string
+  name: string
+  qr_code: string
   address: string
-  distance: number
-  capacity: number
-  lastEmptied: string
-  coordinates: { lat: number; lng: number }
+  status?: string
 }
 
 export default function ScanPage() {
-  const [mode, setMode] = useState<"scan" | "find" | "manual">("scan")
+  const router = useRouter()
+  const [qrInput, setQrInput] = useState("")
   const [scannedBin, setScannedBin] = useState<Bin | null>(null)
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
-  const [manualBinId, setManualBinId] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  useEffect(() => {
-    // Get user location for bin finder
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          })
+  const validateAndFetchBin = async (qrCode: string) => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        router.push("/login")
+        return
+      }
+
+      const response = await fetch(`/api/waste/validate-qr?qr_code=${encodeURIComponent(qrCode)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-        (error) => {
-          console.error("Error getting location:", error)
-        },
-      )
-    }
-  }, [])
+      })
 
-  const handleQRScan = (binId: string) => {
-    // Mock bin data lookup
-    const mockBin: Bin = {
-      id: binId,
-      location: "Central Park East",
-      address: "1234 Park Avenue, New York, NY 10028",
-      distance: 0.1,
-      capacity: 85,
-      lastEmptied: "2 hours ago",
-      coordinates: { lat: 40.7829, lng: -73.9654 },
-    }
-    setScannedBin(mockBin)
-  }
+      const data = await response.json()
 
-  const handleManualEntry = () => {
-    if (manualBinId.trim()) {
-      handleQRScan(manualBinId.trim())
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to validate QR code")
+      }
+
+      if (data.valid && data.bin) {
+        setScannedBin(data.bin)
+      } else {
+        throw new Error("Invalid or inactive bin")
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to validate QR code")
+      setScannedBin(null)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleBinSelect = (bin: Bin) => {
-    setScannedBin(bin)
-    setMode("scan")
+  const handleScan = () => {
+    if (!qrInput.trim()) {
+      setError("Please enter a QR code")
+      return
+    }
+    validateAndFetchBin(qrInput.trim())
   }
 
-  const startWasteSubmission = () => {
+  const handleContinue = () => {
     if (scannedBin) {
-      // Navigate to submit page with bin info
-      window.location.href = `/submit?binId=${scannedBin.id}&location=${encodeURIComponent(scannedBin.location)}`
+      // Store bin data in localStorage for the submit page
+      localStorage.setItem("selectedBin", JSON.stringify(scannedBin))
+      router.push("/submit")
     }
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border/40 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => (window.location.href = "/dashboard")}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
-            </Button>
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-2xl">♻️</div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">QR Scanner</h1>
-                <p className="text-sm text-muted-foreground">Find and scan e-waste bins</p>
+                <h1 className="text-xl font-bold text-foreground">Scan Bin</h1>
+                <p className="text-sm text-muted-foreground">Locate your recycling bin</p>
               </div>
             </div>
+            <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
+              Back to Dashboard
+            </Button>
           </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          {/* Mode Selection */}
-          {!scannedBin && (
-            <Card className="border-border/50 bg-card/50 mb-8">
-              <CardHeader>
-                <CardTitle>How would you like to find a bin?</CardTitle>
-                <CardDescription>Choose your preferred method to locate an e-waste bin</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button
-                    variant={mode === "scan" ? "default" : "outline"}
-                    onClick={() => setMode("scan")}
-                    className="h-20 flex-col gap-2"
-                  >
-                    <QrCode className="w-6 h-6" />
-                    Scan QR Code
-                  </Button>
-                  <Button
-                    variant={mode === "find" ? "default" : "outline"}
-                    onClick={() => setMode("find")}
-                    className="h-20 flex-col gap-2"
-                  >
-                    <Search className="w-6 h-6" />
-                    Find Nearby
-                  </Button>
-                  <Button
-                    variant={mode === "manual" ? "default" : "outline"}
-                    onClick={() => setMode("manual")}
-                    className="h-20 flex-col gap-2"
-                  >
-                    <MapPin className="w-6 h-6" />
-                    Enter Bin ID
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Content based on mode */}
-          {!scannedBin && mode === "scan" && (
-            <QRCodeScanner onScan={handleQRScan} onError={(error) => console.error("QR Scan error:", error)} />
-          )}
-
-          {!scannedBin && mode === "find" && <BinFinder userLocation={userLocation} onBinSelect={handleBinSelect} />}
-
-          {!scannedBin && mode === "manual" && (
-            <Card className="border-border/50 bg-card/50">
-              <CardHeader>
-                <CardTitle>Enter Bin ID</CardTitle>
-                <CardDescription>Type the bin ID found on the e-waste container</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="binId">Bin ID</Label>
-                  <Input
-                    id="binId"
-                    placeholder="e.g., BIN-NYC-001"
-                    value={manualBinId}
-                    onChange={(e) => setManualBinId(e.target.value)}
-                  />
-                </div>
-                <Button onClick={handleManualEntry} disabled={!manualBinId.trim()} className="w-full">
-                  Find Bin
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Scanned Bin Info */}
-          {scannedBin && (
+        <div className="max-w-2xl mx-auto space-y-6">
+          {!scannedBin ? (
             <Card className="border-border/50 bg-card/50">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-success" />
-                  Bin Found!
+                  <QrCode className="w-5 h-5 text-primary" />
+                  Scan or Enter QR Code
                 </CardTitle>
-                <CardDescription>Bin information and status</CardDescription>
+                <CardDescription>Enter the QR code found on the recycling bin</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <Alert>
-                  <MapPin className="w-4 h-4" />
-                  <AlertDescription>
-                    Great! You've successfully identified bin <strong>{scannedBin.id}</strong>
-                  </AlertDescription>
-                </Alert>
-
-                {/* Bin Details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Location</label>
-                      <p className="font-medium">{scannedBin.location}</p>
-                      <p className="text-sm text-muted-foreground">{scannedBin.address}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Bin ID</label>
-                      <code className="block text-sm font-mono bg-muted/50 p-2 rounded mt-1">{scannedBin.id}</code>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Capacity</label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 bg-muted/50 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              scannedBin.capacity > 80
-                                ? "bg-destructive"
-                                : scannedBin.capacity > 60
-                                  ? "bg-warning"
-                                  : "bg-success"
-                            }`}
-                            style={{ width: `${scannedBin.capacity}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium">{scannedBin.capacity}%</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Last Emptied</label>
-                      <p className="font-medium">{scannedBin.lastEmptied}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status Badge */}
-                <div className="flex justify-center">
-                  <Badge
-                    variant="secondary"
-                    className={
-                      scannedBin.capacity > 80
-                        ? "bg-destructive/10 text-destructive border-destructive/20"
-                        : scannedBin.capacity > 60
-                          ? "bg-warning/10 text-warning border-warning/20"
-                          : "bg-success/10 text-success border-success/20"
-                    }
-                  >
-                    {scannedBin.capacity > 80 ? "Nearly Full" : scannedBin.capacity > 60 ? "Filling Up" : "Available"}
-                  </Badge>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-4">
-                  <Button variant="outline" onClick={() => setScannedBin(null)} className="flex-1">
-                    Scan Another
-                  </Button>
-                  <Button
-                    onClick={startWasteSubmission}
-                    disabled={scannedBin.capacity > 90}
-                    className="flex-1 bg-success hover:bg-success/90"
-                  >
-                    <Camera className="w-4 h-4 mr-2" />
-                    Submit E-Waste
-                  </Button>
-                </div>
-
-                {scannedBin.capacity > 90 && (
-                  <Alert>
-                    <AlertDescription>
-                      This bin is nearly full. Please find another bin or wait for it to be emptied.
-                    </AlertDescription>
+              <CardContent className="space-y-4">
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
+
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g., BIN-NYC-001"
+                      value={qrInput}
+                      onChange={(e) => {
+                        setQrInput(e.target.value)
+                        setError("")
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter") {
+                          handleScan()
+                        }
+                      }}
+                      disabled={loading}
+                    />
+                    <Button onClick={handleScan} disabled={loading || !qrInput.trim()}>
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Find the QR code sticker on the recycling bin and enter the code
+                  </p>
+                </div>
+
+                <div className="bg-muted/30 p-4 rounded-lg border border-dashed">
+                  <h4 className="text-sm font-semibold mb-2">How to find the QR code:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    <li>• Look for a sticker on the recycling bin</li>
+                    <li>• The code usually starts with "BIN-"</li>
+                    <li>• Each bin has a unique identifier</li>
+                  </ul>
+                </div>
               </CardContent>
             </Card>
+          ) : (
+            <div className="space-y-4">
+              <Alert className="border-success bg-success/5">
+                <CheckCircle className="w-5 h-5 text-success" />
+                <AlertDescription className="ml-2">
+                  <strong>Bin Verified Successfully!</strong>
+                </AlertDescription>
+              </Alert>
+
+              <Card className="border-success/30 bg-success/5">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-success" />
+                    Bin Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Bin Name</label>
+                    <p className="text-lg font-semibold">{scannedBin.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Location</label>
+                    <p className="text-sm">{scannedBin.address}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">QR Code</label>
+                    <p className="text-sm font-mono">{scannedBin.qr_code}</p>
+                  </div>
+                  {scannedBin.status && (
+                    <div>
+                      <span className="text-xs px-2 py-1 rounded bg-success/10 text-success">
+                        {scannedBin.status.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setScannedBin(null)
+                    setQrInput("")
+                  }}
+                >
+                  Scan Another
+                </Button>
+                <Button className="flex-1" onClick={handleContinue}>
+                  Continue to Submit
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

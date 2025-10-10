@@ -1,14 +1,13 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Mail, User, Wallet } from "lucide-react"
+import { Loader2, Mail, User, Wallet, Copy, Eye, EyeOff, AlertTriangle } from "lucide-react"
 
 interface SignupFormData {
   firstName: string
@@ -16,6 +15,11 @@ interface SignupFormData {
   username: string
   email: string
   password: string
+}
+
+interface WalletData {
+  address: string
+  mnemonic: string
 }
 
 export function SignupForm() {
@@ -30,6 +34,9 @@ export function SignupForm() {
   const [error, setError] = useState("")
   const [step, setStep] = useState<"form" | "otp" | "success">("form")
   const [otp, setOtp] = useState("")
+  const [walletData, setWalletData] = useState<WalletData | null>(null)
+  const [showMnemonic, setShowMnemonic] = useState(false)
+  const [mnemonicSaved, setMnemonicSaved] = useState(false)
 
   const handleInputChange = (field: keyof SignupFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -69,28 +76,54 @@ export function SignupForm() {
     setError("")
 
     try {
-      // Simulate OTP verification
       const response = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email, otp }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error("Invalid OTP")
+        setError(data.error || "Invalid OTP")
+        return
+      }
+
+      // ✅ STORE TOKEN
+      if (data.token) {
+        localStorage.setItem("token", data.token)
+      }
+
+      // ✅ STORE WALLET DATA (INCLUDING MNEMONIC!)
+      if (data.wallet) {
+        setWalletData(data.wallet)
+        // Store wallet address in localStorage for dashboard
+        localStorage.setItem("walletAddress", data.wallet.address)
       }
 
       setStep("success")
     } catch (err) {
-      setError("Invalid OTP. Please try again.")
+      setError("OTP verification failed. Please try again.")
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (step === "success") {
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    // You can add a toast notification here
+  }
+
+  const copyMnemonic = () => {
+    if (walletData?.mnemonic) {
+      copyToClipboard(walletData.mnemonic)
+      alert("Recovery phrase copied to clipboard!")
+    }
+  }
+
+  if (step === "success" && walletData) {
     return (
-      <Card className="w-full max-w-md mx-auto">
+      <Card className="w-full max-w-2xl mx-auto">
         <CardHeader className="text-center">
           <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <Wallet className="w-8 h-8 text-success" />
@@ -98,16 +131,103 @@ export function SignupForm() {
           <CardTitle className="text-success">Welcome to Reloop!</CardTitle>
           <CardDescription>Your account and Cardano wallet have been created successfully</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="bg-muted/50 p-4 rounded-lg">
-            <p className="text-sm text-muted-foreground mb-2">Your wallet address:</p>
-            <code className="text-xs bg-background p-2 rounded block break-all">
-              addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj0vs2qd4a6gtmk4l3aq4s3gf8
-            </code>
+        <CardContent className="space-y-6">
+          {/* CRITICAL WARNING */}
+          <Alert className="border-warning bg-warning/5">
+            <AlertTriangle className="h-5 w-5 text-warning" />
+            <AlertDescription className="ml-2">
+              <strong>IMPORTANT:</strong> Save your 24-word recovery phrase below. This is the ONLY way to recover your
+              wallet if you lose access. Never share it with anyone!
+            </AlertDescription>
+          </Alert>
+
+          {/* WALLET ADDRESS */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Your Wallet Address</Label>
+            <div className="flex gap-2">
+              <code className="flex-1 text-xs bg-muted p-3 rounded-md break-all font-mono">
+                {walletData.address}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => copyToClipboard(walletData.address)}
+                className="shrink-0"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
-          <Button className="w-full" onClick={() => (window.location.href = "/dashboard")}>
-            Go to Dashboard
+
+          {/* 24-WORD RECOVERY PHRASE */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">24-Word Recovery Phrase</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMnemonic(!showMnemonic)}
+                className="h-8 gap-2"
+              >
+                {showMnemonic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showMnemonic ? "Hide" : "Show"}
+              </Button>
+            </div>
+
+            <div className="bg-muted/50 p-4 rounded-lg border-2 border-warning/20">
+              {showMnemonic ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {walletData.mnemonic.split(" ").map((word, index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <span className="text-xs text-muted-foreground w-6">{index + 1}.</span>
+                      <span className="text-sm font-mono bg-background px-2 py-1 rounded flex-1">{word}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Eye className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Click "Show" to reveal your recovery phrase</p>
+                </div>
+              )}
+            </div>
+
+            {showMnemonic && (
+              <Button variant="outline" className="w-full" onClick={copyMnemonic}>
+                <Copy className="w-4 h-4 mr-2" />
+                Copy Recovery Phrase
+              </Button>
+            )}
+          </div>
+
+          {/* CONFIRMATION CHECKBOX */}
+          <div className="flex items-start gap-3 p-4 bg-muted/30 rounded-lg">
+            <input
+              type="checkbox"
+              id="saved"
+              checked={mnemonicSaved}
+              onChange={(e) => setMnemonicSaved(e.target.checked)}
+              className="mt-1"
+            />
+            <label htmlFor="saved" className="text-sm cursor-pointer">
+              I have saved my 24-word recovery phrase in a secure location. I understand that losing it means I will
+              lose access to my wallet forever.
+            </label>
+          </div>
+
+          {/* CONTINUE BUTTON */}
+          <Button
+            className="w-full"
+            size="lg"
+            disabled={!mnemonicSaved}
+            onClick={() => (window.location.href = "/dashboard")}
+          >
+            Continue to Dashboard
           </Button>
+
+          <p className="text-xs text-center text-muted-foreground">
+            💡 Tip: Write down your recovery phrase on paper and store it in a safe place
+          </p>
         </CardContent>
       </Card>
     )
@@ -137,7 +257,7 @@ export function SignupForm() {
                 type="text"
                 placeholder="Enter 6-digit code"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\s/g, ""))}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 maxLength={6}
                 className="text-center text-lg tracking-widest"
               />

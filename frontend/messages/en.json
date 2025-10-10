@@ -1,0 +1,25 @@
+{
+  "common": {
+    "appName": "Reloop",
+    "tagline": "E-Waste to Rewards",
+    "loading": "Loading...",
+    "continue": "Continue",
+    "cancel": "Cancel"
+  },
+  "auth": {
+    "login": "Sign In",
+    "signup": "Create Account",
+    "email": "Email",
+    "password": "Password",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "username": "Username"
+  },
+  "wallet": {
+    "balance": "Balance",
+    "address": "Wallet Address"
+  },
+  "dashboard": {
+    "welcome": "Welcome"
+  }
+}

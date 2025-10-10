@@ -27,6 +27,10 @@ export declare class AuthService {
             lastName: any;
             walletAddress: any;
         };
+        wallet: {
+            address: any;
+            mnemonic: string;
+        };
         token: string;
     }>;
     resendOTP(email: string): Promise<{

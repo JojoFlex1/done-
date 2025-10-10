@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         email,
-        otp,  // Changed from otp_code to otp
+        otp,
       }),
     })
 
@@ -29,11 +29,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: data.message || "OTP verification failed" }, { status: response.status })
     }
 
+    // ✅ PASS THE WALLET DATA (including mnemonic) TO FRONTEND
     return NextResponse.json({
       success: true,
       message: "Email verified successfully",
-      token: data.access_token,
+      token: data.token,
       user: data.user,
+      wallet: data.wallet, // ✅ THIS CONTAINS THE MNEMONIC!
     })
   } catch (error) {
     console.error("OTP verification error:", error)

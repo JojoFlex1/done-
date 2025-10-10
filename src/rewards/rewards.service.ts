@@ -19,16 +19,19 @@ export class RewardsService {
       }
 
       const adaAmount = this.walletService.lovelacesToAda(points);
-      const mockTxHash = `mock_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      await this.supabaseService.updateSubmissionWithBlockchainHash(submissionId, mockTxHash);
+      // For now: Create transaction record without blockchain
+      // We'll add real blockchain in next step
+      const txHash = `pending_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      this.logger.log(`[MOCK] Sent ${adaAmount} ADA to ${profile.wallet_address.substring(0, 20)}...`);
+      await this.supabaseService.updateSubmissionWithBlockchainHash(submissionId, txHash);
+      
+      this.logger.log(`💰 Reward processed: ${adaAmount} ADA for ${profile.wallet_address.substring(0, 20)}...`);
       
       return {
         success: true,
         adaAmount,
-        txHash: mockTxHash,
+        txHash,
         walletAddress: profile.wallet_address,
       };
     } catch (error) {
@@ -49,7 +52,9 @@ export class RewardsService {
         description: transaction.description,
         blockchain_hash: transaction.blockchain_hash,
         created_at: transaction.created_at,
-        status: transaction.blockchain_hash ? 'confirmed' : 'pending',
+        status: transaction.blockchain_hash && !transaction.blockchain_hash.startsWith('pending') 
+          ? 'confirmed' 
+          : 'pending',
       }));
     } catch (error) {
       throw new Error('Failed to get reward history');

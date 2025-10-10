@@ -1,0 +1,25 @@
+{
+  "common": {
+    "appName": "Reloop",
+    "tagline": "ელექტრონული ნარჩენებიდან ჯილდოებამდე",
+    "loading": "იტვირთება...",
+    "continue": "გაგრძელება",
+    "cancel": "გაუქმება"
+  },
+  "auth": {
+    "login": "შესვლა",
+    "signup": "ანგარიშის შექმნა",
+    "email": "ელფოსტა",
+    "password": "პაროლი",
+    "firstName": "სახელი",
+    "lastName": "გვარი",
+    "username": "მომხმარებლის სახელი"
+  },
+  "wallet": {
+    "balance": "ბალანსი",
+    "address": "საფულის მისამართი"
+  },
+  "dashboard": {
+    "welcome": "მოგესალმებით"
+  }
+}

@@ -60,13 +60,12 @@ let AuthService = AuthService_1 = class AuthService {
         this.pendingSignups = new Map();
     }
     async signup(signupDto) {
-        const { email, username, firstName, lastName } = signupDto;
+        const { email, username, firstName, lastName, password } = signupDto;
         try {
             const existingUser = await this.supabaseService.getUserByEmail(email);
             if (existingUser) {
                 throw new common_1.BadRequestException('User with this email already exists');
             }
-            const password = this.generateSecurePassword();
             this.logger.log('Generating Cardano wallet...');
             const wallet = this.walletService.generateWallet();
             const otp = this.generateOTP();
@@ -79,6 +78,7 @@ let AuthService = AuthService_1 = class AuthService {
                 walletAddress: wallet.address,
                 rewardAddress: wallet.rewardAddress,
                 encryptedMnemonic: wallet.encryptedMnemonic,
+                mnemonic: wallet.mnemonic,
                 password,
                 otp,
                 expiresAt,
@@ -120,6 +120,7 @@ let AuthService = AuthService_1 = class AuthService {
                 rewardAddress: pendingSignup.rewardAddress,
                 encryptedMnemonic: pendingSignup.encryptedMnemonic,
             });
+            const mnemonic = pendingSignup.mnemonic;
             this.pendingSignups.delete(email);
             const token = this.jwtService.sign({
                 sub: result.user.id,
@@ -135,6 +136,10 @@ let AuthService = AuthService_1 = class AuthService {
                     firstName: result.profile.first_name,
                     lastName: result.profile.last_name,
                     walletAddress: result.profile.wallet_address,
+                },
+                wallet: {
+                    address: result.profile.wallet_address,
+                    mnemonic: mnemonic,
                 },
                 token,
             };

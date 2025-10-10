@@ -1,0 +1,25 @@
+{
+  "common": {
+    "appName": "Reloop",
+    "tagline": "Taka za Elektroniki hadi Zawadi",
+    "loading": "Inapakia...",
+    "continue": "Endelea",
+    "cancel": "Ghairi"
+  },
+  "auth": {
+    "login": "Ingia",
+    "signup": "Fungua Akaunti",
+    "email": "Barua pepe",
+    "password": "Nenosiri",
+    "firstName": "Jina la Kwanza",
+    "lastName": "Jina la Mwisho",
+    "username": "Jina la Mtumiaji"
+  },
+  "wallet": {
+    "balance": "Salio",
+    "address": "Anwani ya Mkoba"
+  },
+  "dashboard": {
+    "welcome": "Karibu"
+  }
+}

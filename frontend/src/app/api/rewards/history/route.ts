@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
   try {
-    // Get JWT token from Authorization header
     const authHeader = request.headers.get("authorization")
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Authorization token required" }, { status: 401 })
@@ -20,15 +19,13 @@ export async function GET(request: NextRequest) {
     const data = await response.json()
 
     if (!response.ok) {
-      return NextResponse.json({ error: data.message || "Failed to get reward history" }, { status: response.status })
+      return NextResponse.json({ error: data.message || "Failed to get rewards history" }, { status: response.status })
     }
 
-    return NextResponse.json({
-      success: true,
-      history: data,
-    })
+    // ✅ Just return the data directly, not wrapped
+    return NextResponse.json(data)
   } catch (error) {
-    console.error("Reward history error:", error)
+    console.error("Rewards history error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

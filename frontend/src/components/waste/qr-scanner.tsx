@@ -1,71 +1,93 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { QrCode, MapPin, Scan, Type } from "lucide-react"
+import { QrCode, Camera, Loader2, MapPin, CheckCircle } from "lucide-react"
+
+interface BinData {
+  id: string
+  name: string
+  address: string
+  qr_code: string
+  status?: string
+}
 
 interface QRScannerProps {
   onScan: (binId: string, location: string) => void
 }
 
 export function QRScanner({ onScan }: QRScannerProps) {
-  const [isScanning, setIsScanning] = useState(false)
-  const [manualEntry, setManualEntry] = useState(false)
-  const [binId, setBinId] = useState("")
-  const [scannedData, setScannedData] = useState<{ binId: string; location: string } | null>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [scannedData, setScannedData] = useState<BinData | null>(null)
+  const [manualInput, setManualInput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [validating, setValidating] = useState(false)
 
-  const startScanning = async () => {
+  const validateQRCode = async (qrCode: string) => {
+    setValidating(true)
+    setError("")
+
     try {
-      setIsScanning(true)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      })
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
+      const token = localStorage.getItem("token")
+      if (!token) {
+        setError("Please login first")
+        return
       }
 
-      // Simulate QR code detection after 3 seconds
-      setTimeout(() => {
-        const mockBinData = {
-          binId: "BIN-NYC-001",
-          location: "Central Park East, New York",
-        }
-        setScannedData(mockBinData)
-        stopScanning()
-      }, 3000)
-    } catch (error) {
-      console.error("Error accessing camera:", error)
-      setIsScanning(false)
+      const response = await fetch(`/api/waste/validate-qr?qr_code=${encodeURIComponent(qrCode)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Invalid QR code")
+      }
+
+      if (data.valid && data.bin) {
+        setScannedData(data.bin)
+        setError("")
+        return data.bin
+      } else {
+        throw new Error("Bin not found or inactive")
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to validate QR code")
+      setScannedData(null)
+      return null
+    } finally {
+      setValidating(false)
     }
   }
 
-  const stopScanning = () => {
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream
-      stream.getTracks().forEach((track) => track.stop())
-      videoRef.current.srcObject = null
+  const handleManualSubmit = async () => {
+    if (!manualInput.trim()) {
+      setError("Please enter a bin ID")
+      return
     }
-    setIsScanning(false)
-  }
 
-  const handleManualSubmit = () => {
-    if (binId.trim()) {
-      // Mock location lookup based on bin ID
-      const mockLocation = "Downtown Recycling Center, Main Street"
-      onScan(binId.trim(), mockLocation)
+    const binData = await validateQRCode(manualInput.trim())
+
+    if (binData) {
+      onScan(binData.id, binData.address || binData.name)
     }
   }
 
-  const confirmScan = () => {
-    if (scannedData) {
-      onScan(scannedData.binId, scannedData.location)
-    }
+  const handleScanClick = () => {
+    // For now, we'll use manual input
+    // In production, you'd integrate a real QR scanner library like html5-qrcode
+    setError("Camera QR scanning coming soon! Please use manual input for now.")
+  }
+
+  const handleClear = () => {
+    setScannedData(null)
+    setManualInput("")
+    setError("")
   }
 
   return (
@@ -73,116 +95,96 @@ export function QRScanner({ onScan }: QRScannerProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <QrCode className="w-5 h-5 text-primary" />
-          Scan Bin QR Code
+          Scan QR Code
         </CardTitle>
-        <CardDescription>Scan the QR code on the e-waste bin to confirm your drop-off location</CardDescription>
+        <CardDescription>Scan the QR code on the recycling bin or enter the bin ID manually</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {!scannedData && !isScanning && !manualEntry && (
+      <CardContent className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {scannedData ? (
           <div className="space-y-4">
-            <Alert>
-              <MapPin className="w-4 h-4" />
-              <AlertDescription>
-                Each bin has a unique QR code that helps us track your contribution and ensure proper waste processing.
+            <Alert className="border-success bg-success/5">
+              <CheckCircle className="w-5 h-5 text-success" />
+              <AlertDescription className="ml-2">
+                <strong>Bin Verified!</strong>
               </AlertDescription>
             </Alert>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Button onClick={startScanning} className="h-24 flex-col gap-2">
-                <Scan className="w-6 h-6" />
-                Scan QR Code
-              </Button>
-              <Button variant="outline" onClick={() => setManualEntry(true)} className="h-24 flex-col gap-2">
-                <Type className="w-6 h-6" />
-                Enter Bin ID
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {isScanning && (
-          <div className="space-y-4">
-            <div className="relative w-full aspect-square bg-black rounded-lg overflow-hidden">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => {
-                  if (videoRef.current) {
-                    videoRef.current.play()
-                  }
-                }}
-              />
-              {/* QR Code overlay */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-48 h-48 border-2 border-primary rounded-lg">
-                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg" />
+            <Card className="border-success/30 bg-success/5">
+              <CardContent className="pt-6 space-y-3">
+                <div className="flex items-start gap-3">
+                  <MapPin className="w-5 h-5 text-success mt-1" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-foreground">{scannedData.name}</h4>
+                    <p className="text-sm text-muted-foreground mt-1">{scannedData.address}</p>
+                    <p className="text-xs text-muted-foreground mt-2">QR Code: {scannedData.qr_code}</p>
+                    {scannedData.status && (
+                      <span className="text-xs mt-2 inline-block px-2 py-1 rounded bg-success/10 text-success">
+                        {scannedData.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-center">
-                <p className="text-sm">Position QR code within the frame</p>
-              </div>
-            </div>
-            <div className="flex justify-center">
-              <Button variant="outline" onClick={stopScanning}>
-                Cancel Scan
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-2">
+              <Button onClick={handleClear} variant="outline" className="flex-1">
+                Scan Another
+              </Button>
+              <Button
+                onClick={() => onScan(scannedData.id, scannedData.address || scannedData.name)}
+                className="flex-1"
+              >
+                Continue
               </Button>
             </div>
           </div>
-        )}
-
-        {manualEntry && (
+        ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="binId">Bin ID</Label>
-              <Input
-                id="binId"
-                placeholder="Enter bin ID (e.g., BIN-NYC-001)"
-                value={binId}
-                onChange={(e) => setBinId(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-4">
-              <Button variant="outline" onClick={() => setManualEntry(false)} className="flex-1">
-                Back
-              </Button>
-              <Button onClick={handleManualSubmit} disabled={!binId.trim()} className="flex-1">
-                Confirm Bin
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {scannedData && (
-          <div className="space-y-4">
-            <Alert>
-              <QrCode className="w-4 h-4" />
-              <AlertDescription>QR code scanned successfully!</AlertDescription>
-            </Alert>
-
-            <div className="bg-muted/50 p-4 rounded-lg space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Bin ID:</span>
-                <code className="text-sm font-mono bg-background px-2 py-1 rounded">{scannedData.binId}</code>
-              </div>
-              <div className="flex items-start justify-between">
-                <span className="text-sm text-muted-foreground">Location:</span>
-                <div className="text-right">
-                  <p className="text-sm font-medium flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    {scannedData.location}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <Button onClick={confirmScan} className="w-full">
-              Confirm Drop-off Location
+            {/* Camera Scan Button */}
+            <Button onClick={handleScanClick} className="w-full" variant="outline" disabled={loading || validating}>
+              <Camera className="w-4 h-4 mr-2" />
+              {loading ? "Scanning..." : "Scan with Camera"}
             </Button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Or enter manually</span>
+              </div>
+            </div>
+
+            {/* Manual Input */}
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g., BIN-NYC-001"
+                  value={manualInput}
+                  onChange={(e) => {
+                    setManualInput(e.target.value)
+                    setError("")
+                  }}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handleManualSubmit()
+                    }
+                  }}
+                  disabled={validating}
+                />
+                <Button onClick={handleManualSubmit} disabled={validating || !manualInput.trim()}>
+                  {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Enter the bin ID found on the recycling bin</p>
+            </div>
           </div>
         )}
       </CardContent>
